@@ -38,20 +38,40 @@ if (pullMode)
 }
 else
 {
-    var subscriber = await SubscriberClient.CreateAsync(subscriptionName);
+    await SetupSubscriber();      
+}
 
-    Console.WriteLine("Waiting some messages...");
-
-    await subscriber.StartAsync(async (msg, cancellationToken) =>
+async Task SetupSubscriber()
+{
+    while (true)
     {
-        Console.WriteLine($"Received message {msg.MessageId} published at {msg.PublishTime.ToDateTime()}");
-        Console.WriteLine($"Text: '{msg.Data.ToStringUtf8()}'");
-
-        if (msg.Data.ToStringUtf8() == "q")
+        try
         {
-            await subscriber.StopAsync(TimeSpan.FromSeconds(15));
-        }
+            var subscriber = await new SubscriberClientBuilder
+            {
+                SubscriptionName = subscriptionName,
+                Settings = new SubscriberClient.Settings
+                {
+                    // 10 = limit concurrenctly
+                    FlowControlSettings = new FlowControlSettings(10, null)
+                },
+            }.BuildAsync();
 
-        return SubscriberClient.Reply.Ack;
-    });
+            Console.WriteLine("Waiting some messages...");
+
+            // This will throw error, use while for simpler case
+            await subscriber.StartAsync((msg, token) =>
+            {
+                Console.WriteLine($"Received message {msg.MessageId} published at {msg.PublishTime.ToDateTime()}");
+                Console.WriteLine($"Text: '{msg.Data.ToStringUtf8()}'");
+
+                return Task.FromResult(SubscriberClient.Reply.Ack);
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error waiting messages {ex}, will retry in 1s");
+            await Task.Delay(1000);
+        }
+    }
 }
